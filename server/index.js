@@ -13,8 +13,9 @@ const clients = new Map();
 let clientIdCounter = 0;
 
 const server = http.createServer((req, res) => {
-  let filePath = '.' + req.url;
-  if (filePath === './') filePath = './client/index.html';
+  let urlPath = req.url;
+  if (urlPath === '/') urlPath = '/index.html';
+  let filePath = './client' + urlPath;
 
   const extname = path.extname(filePath);
   let contentType = 'text/html';
@@ -204,17 +205,27 @@ function handleSet(client, msg) {
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
 
   if (writeId) {
-    sendMessage(ws, {
+    const ackMsg = {
       type: 'write_ack',
       writeId,
       path: setPath,
       version: logEntry.version,
       hybridTimestamp: logEntry.hybridTimestamp,
+      committed: !logEntry.rejected,
       requestId
-    });
+    };
+    if (logEntry.conflict) {
+      ackMsg.conflict = {
+        ...logEntry.conflict,
+        finalValue: logEntry.value
+      };
+    }
+    sendMessage(ws, ackMsg);
   }
 
-  broadcastChange(logEntry, client.id);
+  if (!logEntry.rejected) {
+    broadcastChange(logEntry, client.id);
+  }
 }
 
 function handleMerge(client, msg) {
@@ -232,17 +243,27 @@ function handleMerge(client, msg) {
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
 
   if (writeId) {
-    sendMessage(ws, {
+    const ackMsg = {
       type: 'write_ack',
       writeId,
       path: mergePath,
       version: logEntry.version,
       hybridTimestamp: logEntry.hybridTimestamp,
+      committed: !logEntry.rejected,
       requestId
-    });
+    };
+    if (logEntry.conflict) {
+      ackMsg.conflict = {
+        ...logEntry.conflict,
+        finalValue: logEntry.value
+      };
+    }
+    sendMessage(ws, ackMsg);
   }
 
-  broadcastChange(logEntry, client.id);
+  if (!logEntry.rejected) {
+    broadcastChange(logEntry, client.id);
+  }
 }
 
 function handleSync(client, msg) {
@@ -258,6 +279,7 @@ function handleSync(client, msg) {
     for (const write of pendingWrites) {
       const { path: writePath, value, clientTimestamp, writeId, op = 'set' } = write;
       const currentVersion = dataStore.getPathVersion(writePath);
+      const existingTimestamp = dataStore.pathTimestamps.get(writePath) || 0;
 
       let logEntry;
       const timestamp = clientTimestamp || Date.now();
@@ -270,18 +292,30 @@ function handleSync(client, msg) {
 
       appliedWriteIds.push(writeId);
 
-      if (lastKnownGlobalVersion > 0 && currentVersion > lastKnownGlobalVersion) {
-        conflicts.push({
+      if (logEntry.conflict || (lastKnownGlobalVersion > 0 && currentVersion > lastKnownGlobalVersion)) {
+        const conflictDetail = {
           path: writePath,
           writeId,
           resolved: true,
-          strategy: 'last_write_wins',
+          strategy: logEntry.conflict ? logEntry.conflict.strategy : 'last_write_wins',
           serverVersion: currentVersion,
-          finalValue: dataStore.get(writePath)
-        });
+          finalValue: logEntry.value,
+          clientWroteAt: timestamp,
+          serverExistingAt: existingTimestamp,
+          hybridTimestamp: logEntry.hybridTimestamp,
+          winner: logEntry.rejected ? 'server' : 'client',
+          rejected: logEntry.rejected
+        };
+        if (logEntry.conflict) {
+          conflictDetail.existingTimestamp = logEntry.conflict.existingTimestamp;
+          conflictDetail.incomingTimestamp = logEntry.conflict.incomingTimestamp;
+        }
+        conflicts.push(conflictDetail);
       }
 
-      broadcastChange(logEntry, client.id);
+      if (!logEntry.rejected) {
+        broadcastChange(logEntry, client.id);
+      }
     }
   }
 
@@ -412,8 +446,8 @@ function splitPath(p) {
 
 function isMatch(subParts, changedParts) {
   if (subParts.length > changedParts.length) {
-    const prefix = changedParts.slice(0, subParts.length);
-    return arraysEqual(prefix, subParts);
+    const prefix = subParts.slice(0, changedParts.length);
+    return arraysEqual(prefix, changedParts);
   }
   let i = 0;
   for (; i < subParts.length; i++) {

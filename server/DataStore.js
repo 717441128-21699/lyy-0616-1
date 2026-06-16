@@ -4,6 +4,7 @@ class DataStore {
   constructor() {
     this.data = {};
     this.pathVersions = new Map();
+    this.pathTimestamps = new Map();
     this.globalVersion = 0;
     this.changeLog = [];
     this.MAX_LOG_SIZE = 10000;
@@ -55,14 +56,41 @@ class DataStore {
     return current !== undefined ? current : null;
   }
 
-  set(path, value, clientTimestamp, clientId) {
+  set(path, value, clientTimestamp, clientId, options = {}) {
     const serverTimestamp = Date.now();
     const hybridTimestamp = this._generateHybridTimestamp(clientTimestamp, serverTimestamp);
+    const normalizedPath = path || '/';
+    const existingTimestamp = this.pathTimestamps.get(normalizedPath) || 0;
+
+    const conflictResult = this._checkConflict(existingTimestamp, hybridTimestamp, options.force);
+
+    if (conflictResult.rejected) {
+      return {
+        id: crypto.randomBytes(8).toString('hex'),
+        path: normalizedPath,
+        value: this.get(normalizedPath),
+        oldValue: this.get(normalizedPath),
+        version: this.globalVersion,
+        hybridTimestamp: existingTimestamp,
+        clientTimestamp,
+        serverTimestamp,
+        clientId,
+        affectedPaths: [normalizedPath],
+        rejected: true,
+        conflict: {
+          existingTimestamp,
+          incomingTimestamp: hybridTimestamp,
+          winner: 'existing',
+          strategy: 'last_write_wins'
+        }
+      };
+    }
+
     const writeId = crypto.randomBytes(8).toString('hex');
     const version = ++this.globalVersion;
 
-    const parts = this._splitPath(path);
-    const oldValue = this.get(path);
+    const parts = this._splitPath(normalizedPath);
+    const oldValue = this.get(normalizedPath);
 
     if (parts.length === 0) {
       this.data = value;
@@ -83,17 +111,17 @@ class DataStore {
     }
 
     const affectedPaths = new Set();
-    affectedPaths.add(path || '/');
-    for (const ancestor of this._getAllAncestorPaths(path || '/')) {
+    affectedPaths.add(normalizedPath);
+    for (const ancestor of this._getAllAncestorPaths(normalizedPath)) {
       affectedPaths.add(ancestor);
     }
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      for (const desc of this._getAllDescendantPaths(value, path || '/')) {
+      for (const desc of this._getAllDescendantPaths(value, normalizedPath)) {
         affectedPaths.add(desc);
       }
     }
     if (oldValue && typeof oldValue === 'object' && !Array.isArray(oldValue)) {
-      for (const desc of this._getAllDescendantPaths(oldValue, path || '/')) {
+      for (const desc of this._getAllDescendantPaths(oldValue, normalizedPath)) {
         affectedPaths.add(desc);
       }
     }
@@ -101,10 +129,11 @@ class DataStore {
     for (const p of affectedPaths) {
       this.pathVersions.set(p, version);
     }
+    this.pathTimestamps.set(normalizedPath, hybridTimestamp);
 
     const logEntry = {
       id: writeId,
-      path: path || '/',
+      path: normalizedPath,
       value,
       oldValue,
       version,
@@ -112,7 +141,14 @@ class DataStore {
       clientTimestamp,
       serverTimestamp,
       clientId,
-      affectedPaths: Array.from(affectedPaths)
+      affectedPaths: Array.from(affectedPaths),
+      rejected: false,
+      conflict: conflictResult.happened ? {
+        existingTimestamp,
+        incomingTimestamp: hybridTimestamp,
+        winner: 'incoming',
+        strategy: 'last_write_wins'
+      } : null
     };
     this.changeLog.push(logEntry);
     if (this.changeLog.length > this.MAX_LOG_SIZE) {
@@ -120,6 +156,16 @@ class DataStore {
     }
 
     return logEntry;
+  }
+
+  _checkConflict(existingTs, incomingTs, force) {
+    if (force || existingTs === 0) {
+      return { rejected: false, happened: false };
+    }
+    if (incomingTs > existingTs) {
+      return { rejected: false, happened: true };
+    }
+    return { rejected: true, happened: true };
   }
 
   merge(path, patch, clientTimestamp, clientId) {

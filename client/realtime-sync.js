@@ -183,9 +183,41 @@
       this.offlineQueue = new OfflineQueue(options.queueStorageKey);
       this.cache = new LocalCache(options.cacheStorageKey);
       this.conflictResolver = options.conflictResolver || null;
-      this.lastKnownServerVersion = 0;
+      this.lastKnownServerVersion = this.cache.data._v || 0;
+      this.optimisticWrites = new Map();
 
       this._bindNetworkEvents();
+    }
+
+    _updateServerVersion(version) {
+      if (!version || version <= 0) return;
+      if (version > this.lastKnownServerVersion) {
+        this.lastKnownServerVersion = version;
+        this.cache.set('/', this.cache.get('/'), version);
+      }
+    }
+
+    _rollbackOptimisticWrite(path, finalValue) {
+      this.cache.set(path, finalValue, undefined);
+      if (this.subscriptions.has(path)) {
+        const sub = this.subscriptions.get(path);
+        const prev = sub.lastValue;
+        sub.lastValue = this._deepClone(finalValue);
+        for (const cb of sub.callbacks) {
+          try {
+            cb({
+              path,
+              value: finalValue,
+              previousValue: prev,
+              changedPaths: [path],
+              origin: 'rollback',
+              timestamp: Date.now()
+            });
+          } catch (e) {}
+        }
+      }
+      this.emit('data_changed', { path, value: finalValue, changedPaths: [path], origin: 'rollback' });
+      this.emit('write_rejected', { path, finalValue });
     }
 
     _defaultUrl() {
@@ -367,7 +399,7 @@
           break;
         case 'subscribed':
           this.cache.set(msg.path, msg.value, msg.version);
-          this.lastKnownServerVersion = Math.max(this.lastKnownServerVersion, msg.globalVersion || 0);
+          this._updateServerVersion(msg.globalVersion);
           if (this.subscriptions.has(msg.path)) {
             this.subscriptions.get(msg.path).version = msg.version;
           }
@@ -380,18 +412,28 @@
         case 'write_ack':
           if (msg.writeId) {
             this.offlineQueue.removeByWriteId(msg.writeId);
+            this.optimisticWrites.delete(msg.writeId);
           }
-          this.lastKnownServerVersion = Math.max(this.lastKnownServerVersion, msg.version || 0);
+          if (msg.conflict) {
+            this.emit('conflict_resolved', {
+              path: msg.path,
+              writeId: msg.writeId,
+              ...msg.conflict
+            });
+            if (!msg.committed) {
+              this._rollbackOptimisticWrite(msg.path, msg.conflict.finalValue);
+            }
+          }
+          this._updateServerVersion(msg.version);
           break;
         case 'sync_response':
-          this._handleSyncResponse(msg);
           break;
         case 'batch_response':
           break;
         case 'get_response':
           if (msg.value !== undefined && msg.path !== undefined) {
             this.cache.set(msg.path, msg.value, msg.version);
-            this.lastKnownServerVersion = Math.max(this.lastKnownServerVersion, msg.globalVersion || 0);
+            this._updateServerVersion(msg.globalVersion);
           }
           break;
         case 'error':
@@ -414,7 +456,7 @@
       const { subscriptionPath, value, version, globalVersion, changedPaths, changeOrigin } = msg;
 
       this.cache.set(subscriptionPath, value, version);
-      this.lastKnownServerVersion = Math.max(this.lastKnownServerVersion, globalVersion || 0);
+      this._updateServerVersion(globalVersion);
 
       if (this.subscriptions.has(subscriptionPath)) {
         const sub = this.subscriptions.get(subscriptionPath);
@@ -543,6 +585,8 @@
       };
 
       if (options.optimistic !== false) {
+        const oldValue = this.cache.get(path);
+        this.optimisticWrites.set(writeId, { path, oldValue, newValue: value, timestamp });
         this.cache.set(path, value, undefined);
         if (this.subscriptions.has(path)) {
           const sub = this.subscriptions.get(path);
@@ -601,8 +645,10 @@
       };
 
       if (options.optimistic !== false) {
+        const oldValue = this.cache.get(path);
         this.cache.merge(path, patch, undefined);
         const newValue = this.cache.get(path);
+        this.optimisticWrites.set(writeId, { path, oldValue, newValue, timestamp });
         if (this.subscriptions.has(path)) {
           const sub = this.subscriptions.get(path);
           const prev = sub.lastValue;
@@ -706,14 +752,18 @@
           pendingWrites: pending
         });
 
-        this.lastKnownServerVersion = resp.serverGlobalVersion;
+        this._updateServerVersion(resp.serverGlobalVersion);
 
         for (const wid of resp.appliedWriteIds || []) {
           this.offlineQueue.removeByWriteId(wid);
+          this.optimisticWrites.delete(wid);
         }
 
         for (const conflict of resp.conflicts || []) {
           this.emit('conflict_resolved', conflict);
+          if (conflict.rejected && conflict.finalValue !== undefined) {
+            this._rollbackOptimisticWrite(conflict.path, conflict.finalValue);
+          }
           if (this.conflictResolver) {
             try {
               const result = await this.conflictResolver(conflict);
@@ -728,6 +778,7 @@
 
         for (const change of resp.changesSinceLast || []) {
           this.cache.set(change.path, change.value, change.version);
+          this._updateServerVersion(change.version);
           if (this.subscriptions.has(change.path)) {
             const sub = this.subscriptions.get(change.path);
             const prev = sub.lastValue;
