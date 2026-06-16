@@ -67,6 +67,7 @@ class DataStore {
     if (conflictResult.rejected) {
       return {
         id: crypto.randomBytes(8).toString('hex'),
+        writeId: options.writeId || null,
         path: normalizedPath,
         value: this.get(normalizedPath),
         oldValue: this.get(normalizedPath),
@@ -87,7 +88,7 @@ class DataStore {
       };
     }
 
-    const writeId = crypto.randomBytes(8).toString('hex');
+    const entryId = crypto.randomBytes(8).toString('hex');
     const version = ++this.globalVersion;
     const hybridTimestamp = this._generateHybridTimestamp(clientTimestamp, serverTimestamp);
 
@@ -135,7 +136,8 @@ class DataStore {
     this.pathHybridTimestamps.set(normalizedPath, hybridTimestamp);
 
     const logEntry = {
-      id: writeId,
+      id: entryId,
+      writeId: options.writeId || null,
       path: normalizedPath,
       value,
       oldValue,
@@ -172,13 +174,13 @@ class DataStore {
     return { rejected: true, happened: true };
   }
 
-  merge(path, patch, clientTimestamp, clientId) {
+  merge(path, patch, clientTimestamp, clientId, options = {}) {
     const currentValue = this.get(path);
     if (currentValue === null || typeof currentValue !== 'object' || Array.isArray(currentValue)) {
-      return this.set(path, patch, clientTimestamp, clientId);
+      return this.set(path, patch, clientTimestamp, clientId, options);
     }
     const merged = this._deepMerge({ ...currentValue }, patch);
-    return this.set(path, merged, clientTimestamp, clientId);
+    return this.set(path, merged, clientTimestamp, clientId, options);
   }
 
   _deepMerge(target, source) {

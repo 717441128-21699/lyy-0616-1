@@ -581,7 +581,8 @@
         path,
         value,
         clientTimestamp: timestamp,
-        conflictStrategy: options.conflictStrategy || 'lww'
+        conflictStrategy: options.conflictStrategy || 'lww',
+        force: options.force || false
       };
 
       if (options.optimistic !== false) {
@@ -616,7 +617,8 @@
             value,
             clientTimestamp: timestamp,
             writeId,
-            conflictStrategy: options.conflictStrategy || 'lww'
+            conflictStrategy: options.conflictStrategy || 'lww',
+            force: options.force || false
           };
           const resp = await this._request(msg);
           const committed = resp.committed !== false;
@@ -649,7 +651,8 @@
         path,
         value: patch,
         clientTimestamp: timestamp,
-        conflictStrategy: 'merge'
+        conflictStrategy: 'merge',
+        force: options.force || false
       };
 
       if (options.optimistic !== false) {
@@ -684,7 +687,8 @@
             path,
             value: patch,
             clientTimestamp: timestamp,
-            writeId
+            writeId,
+            force: options.force || false
           };
           const resp = await this._request(msg);
           const committed = resp.committed !== false;
@@ -792,10 +796,16 @@
           }
         }
 
+        const appliedSet = new Set(resp.appliedWriteIds || []);
+
         for (const change of resp.changesSinceLast || []) {
           this.cache.set(change.path, change.value, change.version);
           this._updateServerVersion(change.version);
-          if (this.subscriptions.has(change.path)) {
+
+          const isOwnWrite = change.writeId && appliedSet.has(change.writeId);
+          const isRejected = change.rejected;
+
+          if (!isOwnWrite && !isRejected && this.subscriptions.has(change.path)) {
             const sub = this.subscriptions.get(change.path);
             const prev = sub.lastValue;
             sub.lastValue = this._deepClone(change.value);
@@ -807,7 +817,8 @@
                   previousValue: prev,
                   changedPaths: [change.path],
                   origin: 'sync',
-                  timestamp: change.hybridTimestamp
+                  timestamp: change.hybridTimestamp,
+                  changeId: change.id
                 });
               } catch (e) {}
             }
@@ -872,9 +883,84 @@
     }
   }
 
+  const MergeStrategies = {
+    lastWriteWins: async (conflict) => {
+      return null;
+    },
+
+    arrayByTimestamp: (options = {}) => {
+      const idKey = options.idKey || 'id';
+      const tsKey = options.timestampKey || 'timestamp';
+      const sortKey = options.sortKey || 'timestamp';
+      const sortOrder = options.sortOrder || 'asc';
+
+      return async (conflict) => {
+        const { path, finalValue } = conflict;
+        if (!Array.isArray(finalValue)) return null;
+        return null;
+      };
+    },
+
+    mergeArrayByKey: (key, options = {}) => {
+      const tsField = options.timestampField || 'timestamp';
+
+      return async (conflict) => {
+        const { path, finalValue } = conflict;
+        if (!Array.isArray(finalValue)) return null;
+        return null;
+      };
+    }
+  };
+
+  MergeStrategies.arrayByTimestamp = function (localArray, remoteArray, options = {}) {
+    const idKey = options.idKey || 'id';
+    const tsKey = options.timestampKey || 'timestamp';
+    const sortOrder = options.sortOrder || 'asc';
+
+    const map = new Map();
+
+    for (const item of localArray) {
+      if (item && item[idKey] !== undefined) {
+        const existing = map.get(item[idKey]);
+        if (!existing || item[tsKey] >= existing[tsKey]) {
+          map.set(item[idKey], item);
+        }
+      }
+    }
+
+    for (const item of remoteArray) {
+      if (item && item[idKey] !== undefined) {
+        const existing = map.get(item[idKey]);
+        if (!existing || item[tsKey] >= existing[tsKey]) {
+          map.set(item[idKey], item);
+        }
+      }
+    }
+
+    const result = Array.from(map.values());
+    result.sort((a, b) => {
+      const av = a[tsKey] || 0;
+      const bv = b[tsKey] || 0;
+      return sortOrder === 'asc' ? av - bv : bv - av;
+    });
+
+    return result;
+  };
+
+  MergeStrategies.createArrayMergeResolver = function (arrayPath, options = {}) {
+    const idKey = options.idKey || 'id';
+    const tsKey = options.timestampKey || 'timestamp';
+
+    return async (conflict) => {
+      if (conflict.path !== arrayPath) return null;
+      return null;
+    };
+  };
+
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = RealtimeSyncClient;
+    module.exports = { RealtimeSyncClient, MergeStrategies };
   } else {
     global.RealtimeSyncClient = RealtimeSyncClient;
+    global.RealtimeSyncMergeStrategies = MergeStrategies;
   }
 })(typeof window !== 'undefined' ? window : this);

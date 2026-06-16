@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Realtime Sync Engine - Demo</title>
+<title>Realtime Sync Engine - 协作 Demo</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -11,485 +11,1104 @@
     background: #0f172a;
     color: #e2e8f0;
     min-height: 100vh;
-    padding: 20px;
+    padding: 16px;
   }
   .container { max-width: 1400px; margin: 0 auto; }
   h1 {
-    font-size: 24px; margin-bottom: 20px;
+    font-size: 22px; margin-bottom: 16px;
     background: linear-gradient(135deg, #60a5fa, #a78bfa);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
-  h2 { font-size: 16px; margin-bottom: 12px; color: #94a3b8; font-weight: 600; }
+  h2 { font-size: 15px; margin-bottom: 12px; color: #94a3b8; font-weight: 600; }
+  h3 { font-size: 13px; margin-bottom: 8px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
   .status-bar {
-    display: flex; gap: 16px; padding: 12px 16px;
-    background: #1e293b; border-radius: 8px; margin-bottom: 20px;
-    font-size: 13px; flex-wrap: wrap;
+    display: flex; gap: 12px; padding: 10px 14px;
+    background: #1e293b; border-radius: 8px; margin-bottom: 16px;
+    font-size: 12px; flex-wrap: wrap; align-items: center;
   }
-  .status-item { display: flex; align-items: center; gap: 6px; }
-  .dot {
+  .status-item { display: flex; align-items: center; gap: 5px; }
+  .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: #64748b;
   }
-  .dot.connected { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite; }
-  .dot.online { background: #3b82f6; }
-  .dot.warning { background: #f59e0b; }
+  .status-dot.connected { background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: pulse 2s infinite; }
+  .status-dot.offline { background: #ef4444; }
+  .status-dot.online { background: #3b82f6; }
+  .status-dot.warning { background: #f59e0b; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-  .grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
   .card {
-    background: #1e293b; border-radius: 10px; padding: 16px;
-    border: 1px solid #334155;
+    background: #1e293b; border-radius: 10px; padding: 14px;
+    border: 1px solid #334155; margin-bottom: 16px;
   }
-  .form-row {
-    display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
-  }
+
   input, select, textarea, button {
-    padding: 8px 12px; border-radius: 6px;
+    padding: 7px 10px; border-radius: 6px;
     background: #0f172a; color: #e2e8f0;
-    border: 1px solid #475569; font-size: 13px;
+    border: 1px solid #334155; font-size: 13px;
     font-family: inherit;
   }
-  input:focus, textarea:focus { outline: none; border-color: #60a5fa; }
-  input[type="text"], input[type="number"] { flex: 1; min-width: 120px; }
-  textarea { width: 100%; min-height: 80px; resize: vertical; }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: #3b82f6;
+  }
   button {
-    cursor: pointer; background: linear-gradient(135deg, #3b82f6, #6366f1);
-    border: none; font-weight: 500; transition: all 0.2s;
+    cursor: pointer; transition: all 0.2s;
+    background: #3b82f6; border-color: #3b82f6; color: white;
   }
-  button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
-  button.secondary { background: #475569; }
-  button.danger { background: #ef4444; }
-  button.warning { background: #f59e0b; color: #1e293b; }
-  button:hover { filter: brightness(1.1); }
-  .data-box {
-    background: #0f172a; border: 1px solid #334155;
-    border-radius: 6px; padding: 12px; margin-top: 12px;
-    max-height: 200px; overflow: auto;
-    font-family: 'Consolas', monospace; font-size: 12px;
-    line-height: 1.6;
+  button:hover { background: #2563eb; border-color: #2563eb; }
+  button.secondary { background: #334155; border-color: #475569; }
+  button.secondary:hover { background: #475569; }
+  button.danger { background: #ef4444; border-color: #ef4444; }
+  button.danger:hover { background: #dc2626; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .form-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-row > input, .form-row > select, .form-row > button { flex: 1; min-width: 100px; }
+  textarea {
+    width: 100%; min-height: 70px; resize: vertical;
+    font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
   }
-  .data-box::-webkit-scrollbar { width: 6px; height: 6px; }
-  .data-box::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-  .log-box {
-    background: #0f172a; border: 1px solid #334155;
-    border-radius: 6px; padding: 12px; margin-top: 12px;
-    max-height: 300px; overflow: auto;
-    font-family: 'Consolas', monospace; font-size: 11px;
+
+  /* 协作面板 */
+  .collab-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
   }
-  .log-entry {
-    padding: 4px 6px; border-radius: 4px; margin-bottom: 2px;
-    border-left: 3px solid #475569;
+  .client-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
   }
-  .log-entry.local { border-color: #60a5fa; background: rgba(96, 165, 250, 0.08); }
-  .log-entry.remote { border-color: #a78bfa; background: rgba(167, 139, 250, 0.08); }
-  .log-entry.self { border-color: #22c55e; background: rgba(34, 197, 94, 0.08); }
-  .log-entry.sync { border-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
-  .log-entry.system { border-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
-  .log-entry.rollback { border-color: #ec4899; background: rgba(236, 72, 153, 0.08); }
-  .log-time { color: #64748b; margin-right: 8px; }
-  .sub-list { margin-top: 10px; }
-  .sub-item {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 10px; background: #0f172a; border-radius: 4px;
-    margin-bottom: 4px; font-size: 12px;
-    border-left: 3px solid #6366f1;
+  .client-badge.a { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid #3b82f6; }
+  .client-badge.b { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7; }
+  .client-badge.other { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid #22c55e; }
+  .client-color-dot {
+    width: 10px; height: 10px; border-radius: 50%;
   }
-  .tag {
-    display: inline-block; padding: 2px 6px; border-radius: 3px;
-    font-size: 10px; font-weight: 600; margin-left: 4px;
+  .client-badge.a .client-color-dot { background: #3b82f6; }
+  .client-badge.b .client-color-dot { background: #a855f7; }
+  .client-badge.other .client-color-dot { background: #22c55e; }
+
+  .session-id {
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11px; color: #64748b;
+    background: #0f172a; padding: 4px 8px; border-radius: 4px;
   }
-  .tag-self { background: #22c55e; color: #064e3b; }
-  .tag-remote { background: #a78bfa; color: #3b0764; }
-  .tag-local { background: #60a5fa; color: #1e3a8a; }
-  .tag-sync { background: #f59e0b; color: #78350f; }
-  .hint { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.5; }
-  .section-divider { height: 1px; background: #334155; margin: 12px 0; }
+
+  .peer-list {
+    display: flex; flex-direction: column; gap: 6px; margin-top: 10px;
+  }
+  .peer-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; background: #0f172a; border-radius: 6px;
+    font-size: 12px;
+  }
+  .peer-info { display: flex; align-items: center; gap: 8px; }
+  .peer-status { font-size: 10px; color: #22c55e; }
+
+  .quick-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .quick-actions button { flex: 1; min-width: 120px; font-size: 12px; }
+
+  /* 时间线 */
+  .timeline {
+    max-height: 500px; overflow-y: auto;
+    padding-right: 4px;
+  }
+  .timeline::-webkit-scrollbar { width: 6px; }
+  .timeline::-webkit-scrollbar-track { background: #0f172a; border-radius: 3px; }
+  .timeline::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+  .timeline-item {
+    position: relative;
+    padding: 8px 0 8px 24px;
+    border-left: 2px solid #334155;
+    margin-left: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .timeline-item:hover { background: rgba(59, 130, 246, 0.05); border-radius: 0 6px 6px 0; }
+  .timeline-item.selected { background: rgba(59, 130, 246, 0.1); }
+
+  .timeline-dot {
+    position: absolute; left: -7px; top: 12px;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #334155;
+    background: #1e293b;
+  }
+  .timeline-item.write .timeline-dot { border-color: #3b82f6; background: #3b82f6; }
+  .timeline-item.receive .timeline-dot { border-color: #22c55e; background: #22c55e; }
+  .timeline-item.conflict .timeline-dot { border-color: #f59e0b; background: #f59e0b; }
+  .timeline-item.rejected .timeline-dot { border-color: #ef4444; background: #ef4444; }
+  .timeline-item.offline .timeline-dot { border-color: #a855f7; background: #a855f7; }
+  .timeline-item.sync .timeline-dot { border-color: #06b6d4; background: #06b6d4; }
+
+  .timeline-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .timeline-type {
+    font-size: 12px; font-weight: 600; color: #cbd5e1;
+  }
+  .timeline-item.write .timeline-type { color: #60a5fa; }
+  .timeline-item.receive .timeline-type { color: #4ade80; }
+  .timeline-item.conflict .timeline-type { color: #fbbf24; }
+  .timeline-item.rejected .timeline-type { color: #f87171; }
+  .timeline-item.offline .timeline-type { color: #c084fc; }
+  .timeline-item.sync .timeline-type { color: #22d3ee; }
+
+  .timeline-time { font-size: 10px; color: #64748b; }
+  .timeline-path {
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11px; color: #94a3b8; margin-bottom: 4px;
+  }
+  .timeline-preview {
+    font-size: 11px; color: #64748b;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .timeline-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; margin-left: 6px;
+  }
+  .timeline-badge.self { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+  .timeline-badge.peer { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+  .timeline-badge.server { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+  .timeline-detail {
+    display: none;
+    margin-top: 8px; padding: 8px;
+    background: #0f172a; border-radius: 6px;
+    font-size: 11px;
+  }
+  .timeline-item.selected .timeline-detail { display: block; }
+  .timeline-detail pre {
+    font-family: 'SF Mono', Consolas, monospace;
+    white-space: pre-wrap; word-break: break-all;
+    color: #94a3b8; font-size: 11px;
+    max-height: 150px; overflow-y: auto;
+  }
+  .detail-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .detail-label { color: #64748b; }
+  .detail-value { color: #e2e8f0; font-family: 'SF Mono', Consolas, monospace; }
+  .detail-value.winner { color: #4ade80; font-weight: 600; }
+  .detail-value.loser { color: #f87171; text-decoration: line-through; }
+
+  /* 冲突策略切换 */
+  .strategy-toggle {
+    display: flex; background: #0f172a; border-radius: 6px; padding: 2px;
+    margin-bottom: 12px;
+  }
+  .strategy-btn {
+    flex: 1; padding: 6px 10px; border-radius: 4px;
+    background: transparent; border: none; color: #64748b;
+    font-size: 12px; cursor: pointer;
+  }
+  .strategy-btn.active {
+    background: #3b82f6; color: white;
+  }
+
+  /* 值显示 */
+  .value-display {
+    background: #0f172a; border-radius: 6px; padding: 10px;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 12px; color: #94a3b8;
+    max-height: 200px; overflow-y: auto;
+    word-break: break-all;
+  }
+  .value-display .key { color: #60a5fa; }
+  .value-display .string { color: #4ade80; }
+  .value-display .number { color: #fbbf24; }
+  .value-display .boolean { color: #f472b6; }
+  .value-display .null { color: #94a3b8; font-style: italic; }
+
+  /* 消息列表演示 */
+  .chat-demo {
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155;
+  }
+  .chat-messages {
+    max-height: 200px; overflow-y: auto;
+    background: #0f172a; border-radius: 6px; padding: 8px;
+    margin-bottom: 8px;
+  }
+  .chat-msg {
+    padding: 6px 10px; margin-bottom: 4px;
+    border-radius: 6px; font-size: 12px;
+    max-width: 80%;
+  }
+  .chat-msg.self {
+    background: rgba(59, 130, 246, 0.2); margin-left: auto;
+    border: 1px solid #3b82f6;
+  }
+  .chat-msg.peer {
+    background: rgba(168, 85, 247, 0.2);
+    border: 1px solid #a855f7;
+  }
+  .chat-msg .msg-time { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+  /* 结果显示 */
+  .result-box {
+    margin-top: 8px; padding: 8px 10px;
+    border-radius: 6px; font-size: 12px;
+    display: none;
+  }
+  .result-box.show { display: block; }
+  .result-box.success { background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #4ade80; }
+  .result-box.rejected { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #f87171; }
+  .result-box.queued { background: rgba(168, 85, 247, 0.1); border: 1px solid #a855f7; color: #c084fc; }
+  .result-box.conflict { background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; color: #fbbf24; }
+
+  .tab-bar {
+    display: flex; gap: 2px; margin-bottom: 12px;
+    background: #0f172a; padding: 2px; border-radius: 6px;
+  }
+  .tab-btn {
+    flex: 1; padding: 6px 8px; border-radius: 4px;
+    background: transparent; border: none; color: #64748b;
+    font-size: 12px; cursor: pointer;
+  }
+  .tab-btn.active { background: #3b82f6; color: white; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .empty-state {
+    text-align: center; padding: 20px; color: #64748b; font-size: 12px;
+  }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>⚡ Realtime Sync Engine Demo</h1>
+  <h1>⚡ 实时同步引擎 · 多人协作 Demo</h1>
 
+  <!-- 状态栏 -->
   <div class="status-bar">
     <div class="status-item">
-      <div class="dot" id="statusDot"></div>
-      <span id="statusText">连接中...</span>
+      <div class="status-dot" id="statusConn"></div>
+      <span id="statusConnText">连接中</span>
     </div>
     <div class="status-item">
-      <div class="dot" id="netDot"></div>
-      <span>网络: <span id="netText">-</span></span>
+      <span>📋 订阅数:</span>
+      <strong id="statusSubs">0</strong>
     </div>
     <div class="status-item">
-      <span>ClientID: <code id="clientId">-</code></span>
+      <span>📝 待同步:</span>
+      <strong id="statusPending">0</strong>
     </div>
     <div class="status-item">
-      <span>订阅数: <span id="subCount">0</span></span>
+      <span>🏷️ 服务器版本:</span>
+      <strong id="statusVersion">-</strong>
     </div>
     <div class="status-item">
-      <span>待同步写入: <span id="queueCount">0</span></span>
-    </div>
-    <div class="status-item">
-      <span>服务器版本: <span id="serverVer">0</span></span>
-    </div>
-    <div class="status-item">
-      <span>时钟偏差: <span id="skew">0</span>ms</span>
+      <span>⏱️ 时钟偏差:</span>
+      <strong id="statusSkew">0 ms</strong>
     </div>
   </div>
 
-  <div class="grid">
-    <div class="card">
-      <h2>📡 订阅管理</h2>
-      <div class="form-row">
-        <input type="text" id="subPath" placeholder="路径，如 /users/123 或 /rooms/*" value="/chat">
-        <button onclick="doSubscribe()">订阅</button>
+  <div class="main-grid">
+    <!-- 左栏：协作面板 + 操作 -->
+    <div>
+      <!-- 协作会话面板 -->
+      <div class="card">
+        <h2>👥 协作会话</h2>
+        <div class="collab-header">
+          <div class="client-badge" id="clientBadge">
+            <span class="client-color-dot"></span>
+            <span id="clientLabel">客户端 A</span>
+          </div>
+          <div class="session-id" id="sessionId">session:demo</div>
+        </div>
+
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">
+          打开第二个窗口进行协作测试，两个窗口将实时同步同一路径的数据。
+        </div>
+
+        <div class="quick-actions">
+          <button onclick="openSecondWindow()">🪟 打开第二个窗口</button>
+          <button class="secondary" onclick="copyShareLink()">📋 复制分享链接</button>
+        </div>
+
+        <h3 style="margin-top: 14px;">共同订阅路径</h3>
+        <div class="form-row">
+          <input type="text" id="collabPath" value="/chat/messages" style="flex: 2;">
+          <button onclick="subscribeCollabPath()">订阅</button>
+          <button class="secondary" onclick="unsubscribeCollabPath()">取消</button>
+        </div>
+
+        <div class="value-display" id="collabValue"><em style="color: #64748b;">点击"订阅"开始同步</em></div>
       </div>
-      <div class="hint">支持通配符: <code>*</code> 匹配任意单级目录，如 <code>/rooms/*</code> 匹配所有房间</div>
-      <div class="sub-list" id="subList"></div>
+
+      <!-- 写入操作 -->
+      <div class="card">
+        <h2>✏️ 写入数据</h2>
+
+        <div class="strategy-toggle">
+          <button class="strategy-btn active" onclick="setStrategy('lww')" id="btnLww">最后写入胜出 (LWW)</button>
+          <button class="strategy-btn" onclick="setStrategy('merge')" id="btnMerge">数组合并 (自定义)</button>
+        </div>
+
+        <div class="form-row">
+          <input type="text" id="writePath" value="/chat/messages" placeholder="路径">
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchWriteTab('value')" id="tabValue">写入值</button>
+          <button class="tab-btn" onclick="switchWriteTab('chat')" id="tabChat">消息演示</button>
+        </div>
+
+        <div class="tab-panel active" id="panelValue">
+          <textarea id="writeValue" placeholder='值（JSON 格式）'>{ "text": "hello" }</textarea>
+          <div class="form-row" style="margin-top: 10px;">
+            <button onclick="doWrite()">写入 (set)</button>
+            <button class="secondary" onclick="doMerge()">合并 (merge)</button>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panelChat">
+          <div class="chat-messages" id="chatMessages">
+            <div class="empty-state">暂无消息</div>
+          </div>
+          <div class="form-row">
+            <input type="text" id="chatInput" placeholder="输入消息..." style="flex: 2;">
+            <button onclick="sendChatMessage()">发送</button>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+            💡 使用自定义合并策略时，两个窗口的消息会按时间合并去重，不会互相覆盖
+          </div>
+        </div>
+
+        <div class="result-box" id="writeResult"></div>
+      </div>
+
+      <!-- 离线测试 -->
+      <div class="card">
+        <h2>📡 离线测试</h2>
+        <div class="form-row">
+          <button class="secondary" onclick="simulateOffline()">模拟断开</button>
+          <button class="secondary" onclick="simulateReconnect()">立即重连</button>
+          <button class="secondary" onclick="clearOfflineQueue()">清空离线队列</button>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 8px;">
+          💡 断开后写入的数据会进入离线队列，重连后自动同步
+        </div>
+      </div>
     </div>
 
-    <div class="card">
-      <h2>✍️ 写入数据</h2>
-      <div class="form-row">
-        <input type="text" id="setPath" placeholder="写入路径" value="/chat">
-        <select id="setOp">
-          <option value="set">set (覆盖)</option>
-          <option value="merge">merge (合并)</option>
-          <option value="remove">remove (删除)</option>
-        </select>
-      </div>
-      <textarea id="setValue" placeholder='JSON值，如 {"messages": [...]}'>{"room": "general", "lastMsg": "hello"}</textarea>
-      <div class="form-row">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-          <input type="checkbox" id="optUpdate" checked>乐观更新
-        </label>
-        <button onclick="doWrite()">写入</button>
-      </div>
-      <div class="data-box" id="previewBox"></div>
-      <div class="hint">勾选"乐观更新"会立即更新本地UI，服务器确认后再同步</div>
-    </div>
+    <!-- 右栏：时间线日志 -->
+    <div>
+      <div class="card">
+        <h2>📜 活动时间线</h2>
+        <div style="font-size: 11px; color: #64748b; margin-bottom: 10px;">
+          按时间顺序记录所有写入、推送、冲突和同步事件。点击条目查看详情。
+        </div>
 
-    <div class="card">
-      <h2>🔍 读取数据</h2>
-      <div class="form-row">
-        <input type="text" id="getPath" placeholder="读取路径" value="/">
-        <button onclick="doGet()">读取</button>
-        <button class="secondary" onclick="doGetCache()">从缓存</button>
-      </div>
-      <div class="data-box" id="readBox">点击读取查看数据</div>
-    </div>
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchLogTab('all')" id="logTabAll">全部</button>
+          <button class="tab-btn" onclick="switchLogTab('conflicts')" id="logTabConflicts">仅冲突</button>
+          <button class="tab-btn" onclick="switchLogTab('writes')" id="logTabWrites">写入</button>
+        </div>
 
-    <div class="card">
-      <h2>🧪 离线测试</h2>
-      <div class="form-row">
-        <button class="warning" onclick="simulateOffline()">模拟断网</button>
-        <button onclick="simulateOnline()">模拟恢复</button>
-        <button class="secondary" onclick="showQueue()">查看队列</button>
+        <div class="timeline" id="timeline">
+          <div class="empty-state">暂无活动记录</div>
+        </div>
+
+        <div style="margin-top: 10px; text-align: right;">
+          <button class="secondary" onclick="clearTimeline()" style="font-size: 11px; padding: 4px 10px;">清空日志</button>
+        </div>
       </div>
-      <div class="form-row">
-        <button class="danger" onclick="clearAll()">清空缓存</button>
-        <button class="secondary" onclick="flushQueue()">强制同步队列</button>
+
+      <!-- 冲突统计 -->
+      <div class="card">
+        <h2>📊 冲突统计</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+          <div style="text-align: center; padding: 10px; background: #0f172a; border-radius: 6px;">
+            <div style="font-size: 24px; font-weight: bold; color: #60a5fa;" id="statWrites">0</div>
+            <div style="font-size: 11px; color: #64748b;">总写入</div>
+          </div>
+          <div style="text-align: center; padding: 10px; background: #0f172a; border-radius: 6px;">
+            <div style="font-size: 24px; font-weight: bold; color: #fbbf24;" id="statConflicts">0</div>
+            <div style="font-size: 11px; color: #64748b;">冲突</div>
+          </div>
+          <div style="text-align: center; padding: 10px; background: #0f172a; border-radius: 6px;">
+            <div style="font-size: 24px; font-weight: bold; color: #4ade80;" id="statWon">0</div>
+            <div style="font-size: 11px; color: #64748b;">胜出</div>
+          </div>
+        </div>
       </div>
-      <div class="section-divider"></div>
-      <h2>📝 日志</h2>
-      <div class="form-row">
-        <button class="secondary" onclick="clearLog()">清空日志</button>
-      </div>
-      <div class="log-box" id="logBox"></div>
     </div>
   </div>
 </div>
 
 <script src="realtime-sync.js"></script>
 <script>
-let client = null;
-const subCallbacks = {};
+// ========== 客户端初始化 ==========
+const urlParams = new URLSearchParams(window.location.search);
+const clientLabel = urlParams.get('client') || 'A';
+const sessionId = urlParams.get('session') || 'demo-session';
 
-function log(msg, type = 'system') {
-  const box = document.getElementById('logBox');
-  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
-  const entry = document.createElement('div');
-  entry.className = 'log-entry ' + type;
-  const tagMap = {
-    local: '<span class="tag tag-local">本地</span>',
-    remote: '<span class="tag tag-remote">远程</span>',
-    self: '<span class="tag tag-self">自己</span>',
-    sync: '<span class="tag tag-sync">同步</span>',
-    rollback: '<span class="tag" style="background:#ec4899;color:#831843;">回滚</span>',
-    system: ''
+const isClientA = clientLabel.toUpperCase() === 'A';
+const clientColor = isClientA ? 'a' : 'b';
+const clientName = isClientA ? '客户端 A' : '客户端 B';
+
+document.getElementById('clientBadge').className = 'client-badge ' + clientColor;
+document.getElementById('clientLabel').textContent = clientName;
+document.getElementById('sessionId').textContent = 'session:' + sessionId;
+
+let currentStrategy = 'lww';
+let timelineItems = [];
+let selectedTimelineId = null;
+let logFilter = 'all';
+
+// 统计
+const stats = {
+  writes: 0,
+  conflicts: 0,
+  won: 0
+};
+
+// 聊天消息（数组合并示例用）
+let chatMessages = [];
+
+// ========== 时间线日志 ==========
+function addTimelineEntry(type, data) {
+  const entry = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    type,
+    timestamp: Date.now(),
+    ...data
   };
-  entry.innerHTML = `<span class="log-time">[${time}]</span>${msg} ${tagMap[type] || ''}`;
-  box.insertBefore(entry, box.firstChild);
-  while (box.children.length > 100) box.removeChild(box.lastChild);
+  timelineItems.unshift(entry);
+  renderTimeline();
+  updateStats(type, data);
 }
 
-function updateStats() {
-  if (!client) return;
-  const s = client.stats;
-  document.getElementById('statusDot').className = 'dot ' + (s.connected ? 'connected' : 'warning');
-  document.getElementById('statusText').textContent = s.connected ? '已连接' : '未连接';
-  document.getElementById('netDot').className = 'dot ' + (s.online ? 'online' : 'warning');
-  document.getElementById('netText').textContent = s.online ? '在线' : '离线';
-  document.getElementById('clientId').textContent = s.clientId || '-';
-  document.getElementById('subCount').textContent = s.subscriptions;
-  document.getElementById('queueCount').textContent = s.pendingWrites;
-  document.getElementById('serverVer').textContent = s.lastKnownServerVersion;
-  document.getElementById('skew').textContent = s.clockSkewMs;
-
-  const subs = Object.keys(subCallbacks);
-  const subList = document.getElementById('subList');
-  subList.innerHTML = '';
-  for (const path of subs) {
-    const item = document.createElement('div');
-    item.className = 'sub-item';
-    item.innerHTML = `
-      <code style="color:#a78bfa">${path}</code>
-      <button class="danger" style="padding:2px 8px;font-size:11px;" onclick="doUnsubscribe('${path.replace(/'/g, "\\'")}')">取消</button>
-    `;
-    subList.appendChild(item);
+function updateStats(type, data) {
+  if (type === 'write' || type === 'receive') {
+    stats.writes++;
   }
-  renderPreview();
-}
-
-function renderPreview() {
-  const box = document.getElementById('previewBox');
-  const path = document.getElementById('setPath').value;
-  if (!client) { box.textContent = '等待连接...'; return; }
-  try {
-    const val = client.cache.get(path);
-    box.innerHTML = '<span style="color:#64748b">路径 </span><code style="color:#a78bfa">' + path + '</code><br>' +
-      '<span style="color:#64748b">本地缓存值: </span><br>' +
-      '<pre style="color:#e2e8f0;margin-top:4px;">' + JSON.stringify(val, null, 2) + '</pre>';
-  } catch (e) { box.textContent = '读取失败: ' + e.message; }
-}
-
-async function doSubscribe() {
-  const path = document.getElementById('subPath').value.trim();
-  if (!path || subCallbacks[path]) return;
-  log('订阅路径: ' + path);
-  const cb = (evt) => {
-    const origin = evt.origin === 'local_optimistic' ? 'local'
-                : evt.origin === 'self' ? 'self'
-                : evt.origin === 'remote' ? 'remote'
-                : evt.origin === 'sync' ? 'sync' : 'system';
-    log(`[${path}] 值变更 -> ${JSON.stringify(evt.value).substring(0, 120)}`, origin);
-    updateStats();
-  };
-  client.subscribe(path, cb);
-  subCallbacks[path] = cb;
-  updateStats();
-}
-
-function doUnsubscribe(path) {
-  if (!subCallbacks[path]) return;
-  client.unsubscribe(path, subCallbacks[path]);
-  delete subCallbacks[path];
-  log('取消订阅: ' + path);
-  updateStats();
-}
-
-async function doWrite() {
-  const path = document.getElementById('setPath').value.trim();
-  const op = document.getElementById('setOp').value;
-  const raw = document.getElementById('setValue').value;
-  const optimistic = document.getElementById('optUpdate').checked;
-  if (!path) return;
-
-  let value;
-  if (op === 'remove') {
-    value = null;
-  } else {
-    try { value = raw ? JSON.parse(raw) : {}; }
-    catch (e) { alert('JSON格式错误: ' + e.message); return; }
+  if (type === 'conflict' || type === 'rejected') {
+    stats.conflicts++;
   }
-
-  log(`执行 ${op} ${path}: ${JSON.stringify(value).substring(0, 100)}`);
-  try {
-    const result = op === 'set' ? await client.set(path, value, { optimistic })
-                 : op === 'merge' ? await client.merge(path, value, { optimistic })
-                 : await client.remove(path, { optimistic });
-    
-    let statusText, statusType;
-    if (result.rejected) {
-      statusText = '❌ 被拒绝(LWW：时间更早)';
-      statusType = 'rollback';
-    } else if (result.committed) {
-      statusText = '✅ 已提交';
-      statusType = 'self';
-    } else if (result.queued) {
-      statusText = '⏳ 已进入离线队列';
-      statusType = 'local';
-    } else {
-      statusText = '❓ 未知状态';
-      statusType = 'system';
-    }
-    
-    let detail = '';
-    if (result.conflict) {
-      const inStr = new Date(result.conflict.incomingTimestamp).toLocaleTimeString();
-      const exStr = new Date(result.conflict.existingTimestamp).toLocaleTimeString();
-      detail = ` [冲突: 写入=${inStr} vs 现有=${exStr}, ${result.conflict.winner === 'incoming' ? '写入胜出' : '现有胜出'}]`;
-    }
-    
-    log(`写入结果: ${statusText}${detail}, writeId=${result.writeId.substring(0, 12)}...`, statusType);
-  } catch (e) {
-    log('写入错误: ' + e.message, 'system');
+  if (data && data.winner === 'client') {
+    stats.won++;
   }
-  updateStats();
+  document.getElementById('statWrites').textContent = stats.writes;
+  document.getElementById('statConflicts').textContent = stats.conflicts;
+  document.getElementById('statWon').textContent = stats.won;
 }
 
-async function doGet() {
-  const path = document.getElementById('getPath').value.trim();
-  const box = document.getElementById('readBox');
-  box.textContent = '读取中...';
-  try {
-    const val = await client.get(path);
-    box.innerHTML = '<pre style="color:#e2e8f0;">' + JSON.stringify(val, null, 2) + '</pre>';
-    log('从服务器读取: ' + path, 'self');
-  } catch (e) {
-    box.innerHTML = '<span style="color:#ef4444">失败: ' + e.message + '</span>';
-  }
-  updateStats();
-}
-
-function doGetCache() {
-  const path = document.getElementById('getPath').value.trim();
-  const box = document.getElementById('readBox');
-  try {
-    const val = client.cache.get(path);
-    box.innerHTML = '<span style="color:#64748b">从本地缓存读取</span><br><pre style="color:#e2e8f0;margin-top:4px;">' + JSON.stringify(val, null, 2) + '</pre>';
-  } catch (e) {
-    box.textContent = '读取失败: ' + e.message;
-  }
-}
-
-function simulateOffline() {
-  log('>>> 模拟网络断开 <<<', 'system');
-  window.dispatchEvent(new Event('offline'));
-  if (client.ws) {
-    try { client.ws.close(); } catch (e) {}
-  }
-  updateStats();
-}
-
-function simulateOnline() {
-  log('>>> 模拟网络恢复 <<<', 'system');
-  window.dispatchEvent(new Event('online'));
-  client.connect();
-  updateStats();
-}
-
-function showQueue() {
-  const queue = client.getPendingWrites();
-  const box = document.getElementById('readBox');
-  if (queue.length === 0) {
-    box.innerHTML = '<span style="color:#22c55e">✓ 离线队列为空</span>';
-  } else {
-    box.innerHTML = `<span style="color:#f59e0b">共 ${queue.length} 条待同步写入:</span><br><br>` +
-      '<pre style="color:#e2e8f0;">' + JSON.stringify(queue.map(q => ({
-        op: q.op, path: q.path, writeId: q.writeId.substring(0, 15) + '...',
-        ts: new Date(q.clientTimestamp).toLocaleTimeString()
-      })), null, 2) + '</pre>';
-  }
-}
-
-function flushQueue() {
-  log('强制执行同步...', 'sync');
-  client._performSync();
-  updateStats();
-}
-
-function clearAll() {
-  if (!confirm('确定清空所有本地缓存和离线队列？')) return;
-  client.clearCache();
-  client.offlineQueue.clear();
-  log('本地数据已清空', 'system');
-  updateStats();
-  renderPreview();
-}
-
-function clearLog() {
-  document.getElementById('logBox').innerHTML = '';
-}
-
-async function init() {
-  log('初始化客户端...', 'system');
-  client = new RealtimeSyncClient({
-    autoReconnect: true,
-    queueStorageKey: 'demo_rts_queue_' + Math.random().toString(36).slice(2, 6),
-    cacheStorageKey: 'demo_rts_cache_' + Math.random().toString(36).slice(2, 6),
-    conflictResolver: async (conflict) => {
-      log(`⚔️ 冲突解决中 [${conflict.path}] 策略=${conflict.strategy}`, 'sync');
-      return null;
-    }
+function renderTimeline() {
+  const container = document.getElementById('timeline');
+  const filtered = timelineItems.filter(item => {
+    if (logFilter === 'all') return true;
+    if (logFilter === 'conflicts') return item.type === 'conflict' || item.type === 'rejected';
+    if (logFilter === 'writes') return item.type === 'write' || item.type === 'receive';
+    return true;
   });
 
-  client.on('connected', (info) => {
-    log(`✓ 已连接到服务器 (clientId=${info.clientId.substring(0, 12)}...)`, 'system');
-    updateStats();
-    doSubscribe();
-  });
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">暂无记录</div>';
+    return;
+  }
 
-  client.on('disconnected', () => {
-    log('⚠️ 连接断开', 'system');
-    updateStats();
-  });
+  container.innerHTML = filtered.map(item => {
+    const selected = item.id === selectedTimelineId ? 'selected' : '';
+    const typeLabel = {
+      write: '✏️ 本地写入',
+      receive: '📥 收到推送',
+      conflict: '⚡ 冲突',
+      rejected: '❌ 被拒绝',
+      offline: '📴 离线入队',
+      sync: '🔄 同步'
+    }[item.type] || item.type;
 
-  client.on('reconnecting', (info) => {
-    log(`🔄 尝试重连 (#${info.attempt})...`, 'system');
-    updateStats();
-  });
-
-  client.on('synced', (info) => {
-    log(`📦 同步完成: 版本=${info.serverVersion}, 冲突=${info.conflicts?.length || 0}, 变更=${info.changesApplied || 0}`, 'sync');
-    updateStats();
-  });
-
-  client.on('sync_error', (e) => {
-    log('❌ 同步错误: ' + e.error.message, 'system');
-  });
-
-  client.on('write_queued', (op) => {
-    log(`📥 写入已排队 [${op.op}] ${op.path}`, 'local');
-    updateStats();
-  });
-
-  client.on('conflict_resolved', (c) => {
-    const winner = c.winner === 'client' ? '客户端' : '服务端';
-    const strat = c.strategy || 'last_write_wins';
-    const detail = c.existingTimestamp && c.incomingTimestamp
-      ? ` 客户端时间:${new Date(c.incomingTimestamp).toLocaleTimeString()} vs 服务端现有:${new Date(c.existingTimestamp).toLocaleTimeString()}`
+    const badge = item.origin === 'self'
+      ? '<span class="timeline-badge self">自己</span>'
+      : item.origin === 'peer'
+      ? '<span class="timeline-badge peer">对方</span>'
+      : item.origin === 'server'
+      ? '<span class="timeline-badge server">服务端</span>'
       : '';
-    log(`⚔️ 冲突 [${c.path}] ${strat} → ${winner}胜出${detail}`, 'sync');
-  });
 
-  client.on('write_rejected', (e) => {
-    log(`❌ 写入被拒绝 [${e.path}]，已回滚到服务端值`, 'system');
-  });
+    const timeStr = new Date(item.timestamp).toLocaleTimeString('zh-CN', { hour12: false }) + '.'
+      + String(new Date(item.timestamp).getMilliseconds()).padStart(3, '0');
 
-  client.on('network_offline', () => {
-    log('📵 检测到网络离线事件', 'system');
-    updateStats();
-  });
+    let preview = '';
+    if (item.value !== undefined) {
+      try {
+        preview = JSON.stringify(item.value);
+        if (preview.length > 60) preview = preview.slice(0, 60) + '...';
+      } catch (e) {
+        preview = String(item.value);
+      }
+    }
 
-  client.on('network_online', () => {
-    log('📶 检测到网络恢复事件', 'system');
-    updateStats();
-  });
+    let detailHtml = '';
+    if (item.detail) {
+      detailHtml = '<pre>' + JSON.stringify(item.detail, null, 2) + '</pre>';
+    } else if (item.conflict) {
+      detailHtml = `
+        <div class="detail-row">
+          <span class="detail-label">写入时间:</span>
+          <span class="detail-value ${item.winner === 'client' ? 'winner' : 'loser'}">
+            ${formatTime(item.conflict.incomingTimestamp)}
+            ${item.winner === 'client' ? ' ✓ 胜出' : ' ✗ 失败'}
+          </span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">现有时间:</span>
+          <span class="detail-value ${item.winner === 'server' ? 'winner' : 'loser'}">
+            ${formatTime(item.conflict.existingTimestamp)}
+            ${item.winner === 'server' ? ' ✓ 胜出' : ''}
+          </span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">采用策略:</span>
+          <span class="detail-value">${item.conflict.strategy || 'LWW'}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">最终值:</span>
+        </div>
+        <pre>${JSON.stringify(item.finalValue || item.value, null, 2)}</pre>
+      `;
+    }
 
-  client.on('error', (e) => {
-    log('❌ 错误: ' + e.message, 'system');
-  });
-
-  setInterval(updateStats, 1000);
-  await client.connect();
+    return `
+      <div class="timeline-item ${item.type} ${selected}" onclick="selectTimeline('${item.id}')">
+        <div class="timeline-dot"></div>
+        <div class="timeline-header">
+          <span class="timeline-type">${typeLabel}${badge}</span>
+          <span class="timeline-time">${timeStr}</span>
+        </div>
+        <div class="timeline-path">${item.path || '-'}</div>
+        <div class="timeline-preview">${preview}</div>
+        <div class="timeline-detail">${detailHtml}</div>
+      </div>
+    `;
+  }).join('');
 }
 
-init().catch(e => {
-  log('初始化失败: ' + e.message, 'system');
-  console.error(e);
+function selectTimeline(id) {
+  selectedTimelineId = selectedTimelineId === id ? null : id;
+  renderTimeline();
+}
+
+function clearTimeline() {
+  timelineItems = [];
+  stats.writes = 0;
+  stats.conflicts = 0;
+  stats.won = 0;
+  renderTimeline();
+  document.getElementById('statWrites').textContent = '0';
+  document.getElementById('statConflicts').textContent = '0';
+  document.getElementById('statWon').textContent = '0';
+}
+
+function switchLogTab(tab) {
+  logFilter = tab;
+  ['all', 'conflicts', 'writes'].forEach(t => {
+    document.getElementById('logTab' + t.charAt(0).toUpperCase() + t.slice(1)).className =
+      t === tab ? 'tab-btn active' : 'tab-btn';
+  });
+  renderTimeline();
+}
+
+function formatTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return d.toLocaleTimeString('zh-CN', { hour12: false }) + '.' +
+    String(d.getMilliseconds()).padStart(3, '0');
+}
+
+// ========== 客户端实例 ==========
+const client = new RealtimeSyncClient({
+  url: 'ws://' + window.location.host,
+  clientId: 'demo-' + clientLabel.toLowerCase() + '-' + Date.now().toString(36),
+  autoReconnect: true,
+  persistQueue: true,
+  optimisticUpdates: true
 });
+
+// 连接状态
+client.on('connected', () => {
+  document.getElementById('statusConn').className = 'status-dot connected';
+  document.getElementById('statusConnText').textContent = '已连接';
+  addTimelineEntry('sync', { path: '-', detail: { event: '连接已建立' } });
+});
+
+client.on('disconnected', () => {
+  document.getElementById('statusConn').className = 'status-dot offline';
+  document.getElementById('statusConnText').textContent = '已断开';
+});
+
+client.on('reconnecting', (attempt) => {
+  document.getElementById('statusConn').className = 'status-dot warning';
+  document.getElementById('statusConnText').textContent = '重连中 #' + attempt;
+});
+
+client.on('synced', (data) => {
+  addTimelineEntry('sync', {
+    path: '-',
+    detail: {
+      serverVersion: data.serverVersion,
+      conflicts: data.conflicts?.length || 0,
+      changes: data.changes?.length || 0
+    }
+  });
+  updateStatus();
+});
+
+client.on('status', updateStatus);
+
+function updateStatus() {
+  const s = client.getStatus();
+  document.getElementById('statusSubs').textContent = s.subscriptions;
+  document.getElementById('statusPending').textContent = s.pendingWrites;
+  document.getElementById('statusVersion').textContent = s.lastKnownServerVersion || '-';
+  document.getElementById('statusSkew').textContent = s.clockSkewMs + ' ms';
+}
+
+// 冲突回调
+client.on('conflict', (conflict) => {
+  addTimelineEntry('conflict', {
+    path: conflict.path,
+    value: conflict.finalValue,
+    conflict: conflict,
+    winner: conflict.winner,
+    origin: conflict.winner === 'client' ? 'self' : 'server'
+  });
+});
+
+// ========== 协作订阅 ==========
+let collabUnsub = null;
+
+function subscribeCollabPath() {
+  const path = document.getElementById('collabPath').value.trim() || '/';
+  if (collabUnsub) collabUnsub();
+
+  collabUnsub = client.subscribe(path, (data) => {
+    document.getElementById('collabValue').innerHTML = formatValueHtml(data.value);
+
+    // 聊天消息特殊处理
+    if (path === '/chat/messages' && Array.isArray(data.value)) {
+      chatMessages = data.value;
+      renderChatMessages();
+    }
+
+    // 收到推送（远程写入）
+    if (data.origin === 'remote') {
+      addTimelineEntry('receive', {
+        path: data.path,
+        value: data.value,
+        origin: 'peer',
+        detail: { from: '其他客户端', origin: data.origin }
+      });
+    } else if (data.origin === 'sync') {
+      addTimelineEntry('receive', {
+        path: data.path,
+        value: data.value,
+        origin: 'peer',
+        detail: { from: '同步恢复', origin: data.origin }
+      });
+    }
+  });
+
+  // 立即读取一次
+  client.get(path).then(val => {
+    document.getElementById('collabValue').innerHTML = formatValueHtml(val);
+    if (path === '/chat/messages' && Array.isArray(val)) {
+      chatMessages = val || [];
+      renderChatMessages();
+    }
+  });
+
+  addTimelineEntry('sync', { path, detail: { action: '订阅成功' } });
+  updateStatus();
+}
+
+function unsubscribeCollabPath() {
+  if (collabUnsub) {
+    collabUnsub();
+    collabUnsub = null;
+    document.getElementById('collabValue').innerHTML = '<em style="color: #64748b;">已取消订阅</em>';
+    addTimelineEntry('sync', { path: document.getElementById('collabPath').value, detail: { action: '取消订阅' } });
+  }
+  updateStatus();
+}
+
+function formatValueHtml(val) {
+  if (val === null || val === undefined) {
+    return '<span class="null">null</span>';
+  }
+  try {
+    const jsonStr = JSON.stringify(val, null, 2);
+    return escapeHtml(jsonStr)
+      .replace(/"([^"]+)":/g, '<span class="key">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span class="string">"$1"</span>')
+      .replace(/: (\d+\.?\d*)/g, ': <span class="number">$1</span>')
+      .replace(/: (true|false)/g, ': <span class="boolean">$1</span>')
+      .replace(/: (null)/g, ': <span class="null">$1</span>');
+  } catch (e) {
+    return escapeHtml(String(val));
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ========== 写入操作 ==========
+async function doWrite() {
+  const path = document.getElementById('writePath').value.trim() || '/';
+  let value;
+  try {
+    value = JSON.parse(document.getElementById('writeValue').value);
+  } catch (e) {
+    showResult('rejected', '❌ JSON 解析失败: ' + e.message);
+    return;
+  }
+
+  showResult('loading', '⏳ 写入中...');
+
+  const result = await client.set(path, value, {
+    conflictStrategy: 'last-write-wins'
+  });
+
+  if (result.rejected) {
+    showResult('rejected', '❌ 被拒绝 (LWW: 服务端有更新的数据)');
+    addTimelineEntry('rejected', {
+      path,
+      value,
+      conflict: result.conflict,
+      winner: 'server',
+      origin: 'server'
+    });
+  } else {
+    const status = result.committed ? 'success' : 'queued';
+    const label = result.committed ? '✅ 已写入' : '⏳ 已进入离线队列';
+    showResult(status, label + ' (版本: ' + result.version + ')');
+
+    addTimelineEntry('write', {
+      path,
+      value,
+      origin: 'self',
+      detail: { version: result.version, committed: result.committed }
+    });
+
+    if (!result.committed) {
+      addTimelineEntry('offline', {
+        path,
+        value,
+        detail: { status: '离线队列待同步' }
+      });
+    }
+  }
+
+  if (result.conflict) {
+    addTimelineEntry('conflict', {
+      path,
+      value: result.conflict.finalValue || value,
+      conflict: result.conflict,
+      winner: result.rejected ? 'server' : 'client',
+      origin: result.rejected ? 'server' : 'self'
+    });
+  }
+
+  updateStatus();
+}
+
+async function doMerge() {
+  const path = document.getElementById('writePath').value.trim() || '/';
+  let value;
+  try {
+    value = JSON.parse(document.getElementById('writeValue').value);
+  } catch (e) {
+    showResult('rejected', '❌ JSON 解析失败: ' + e.message);
+    return;
+  }
+
+  showResult('loading', '⏳ 合并中...');
+
+  const result = await client.merge(path, value);
+
+  if (result.rejected) {
+    showResult('rejected', '❌ 被拒绝');
+  } else {
+    const status = result.committed ? 'success' : 'queued';
+    const label = result.committed ? '✅ 已合并' : '⏳ 已进入离线队列';
+    showResult(status, label + ' (版本: ' + result.version + ')');
+
+    addTimelineEntry('write', {
+      path,
+      value,
+      origin: 'self',
+      detail: { type: 'merge', version: result.version }
+    });
+  }
+
+  updateStatus();
+}
+
+function showResult(type, text) {
+  const box = document.getElementById('writeResult');
+  box.className = 'result-box show ' + type;
+  box.textContent = text;
+}
+
+// ========== 冲突策略切换 ==========
+function setStrategy(strategy) {
+  currentStrategy = strategy;
+  document.getElementById('btnLww').className = 'strategy-btn' + (strategy === 'lww' ? ' active' : '');
+  document.getElementById('btnMerge').className = 'strategy-btn' + (strategy === 'merge' ? ' active' : '');
+
+  if (strategy === 'merge') {
+    client.setConflictResolver(arrayMergeResolver);
+  } else {
+    client.setConflictResolver(null);
+  }
+}
+
+// 自定义数组合并冲突解决器
+function arrayMergeResolver(conflict) {
+  return null; // 暂不自动解决，展示冲突即可
+}
+
+// ========== 聊天消息演示 ==========
+function switchWriteTab(tab) {
+  ['value', 'chat'].forEach(t => {
+    const btnId = 'tab' + t.charAt(0).toUpperCase() + t.slice(1);
+    const panelId = 'panel' + t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById(btnId).className = t === tab ? 'tab-btn active' : 'tab-btn';
+    document.getElementById(panelId).className = t === tab ? 'tab-panel active' : 'tab-panel';
+  });
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const now = Date.now();
+
+  const msg = {
+    id: msgId,
+    text: text,
+    sender: clientLabel,
+    timestamp: now
+  };
+
+  input.value = '';
+
+  if (currentStrategy === 'merge') {
+    await sendWithArrayMerge(msg);
+  } else {
+    await sendWithLWW(msg);
+  }
+}
+
+async function sendWithLWW(msg) {
+  const current = chatMessages || [];
+  const updated = [...current, msg];
+
+  const result = await client.set('/chat/messages', updated);
+
+  if (result.committed) {
+    addTimelineEntry('write', {
+      path: '/chat/messages',
+      value: msg,
+      origin: 'self',
+      detail: { strategy: 'LWW', version: result.version }
+    });
+    showResult('success', '✅ LWW: 写入成功 (版本 ' + result.version + ')');
+  } else if (result.rejected) {
+    addTimelineEntry('rejected', {
+      path: '/chat/messages',
+      value: msg,
+      conflict: result.conflict,
+      winner: 'server',
+      detail: { strategy: 'LWW', note: '消息因时间更早被丢弃' }
+    });
+    showResult('rejected', '❌ LWW: 被拒绝，消息已丢失 (服务端有更新数据)');
+    // 拉取最新值刷新
+    const latest = await client.get('/chat/messages');
+    if (Array.isArray(latest)) {
+      chatMessages = latest;
+      renderChatMessages();
+    }
+  } else {
+    addTimelineEntry('offline', {
+      path: '/chat/messages',
+      value: msg,
+      detail: { strategy: 'LWW', status: '离线入队' }
+    });
+    showResult('queued', '⏳ 离线队列中，重连后同步');
+  }
+}
+
+async function sendWithArrayMerge(msg) {
+  const current = chatMessages || [];
+  const updated = [...current, msg];
+  updated.sort((a, b) => a.timestamp - b.timestamp);
+
+  const result = await client.set('/chat/messages', updated);
+
+  if (result.committed) {
+    addTimelineEntry('write', {
+      path: '/chat/messages',
+      value: msg,
+      origin: 'self',
+      detail: { strategy: '数组合并', version: result.version }
+    });
+    showResult('success', '✅ 数组合并: 写入成功 (版本 ' + result.version + ')');
+  } else if (result.rejected) {
+    // 被拒绝时：合并服务端数组和本地数组，重试
+    const serverValue = result.conflict?.finalValue || [];
+    const merged = mergeArraysById(serverValue, updated, 'id', 'timestamp');
+
+    addTimelineEntry('conflict', {
+      path: '/chat/messages',
+      value: merged,
+      conflict: result.conflict,
+      winner: 'merge',
+      origin: 'self',
+      detail: {
+        strategy: '数组合并',
+        serverCount: serverValue.length,
+        localCount: updated.length,
+        mergedCount: merged.length,
+        note: '自动合并两个数组并重新写入'
+      }
+    });
+
+    // 用合并后的数组重试（force 或者更新时间戳）
+    const retryResult = await client.set('/chat/messages', merged, { force: true });
+
+    if (retryResult.committed) {
+      addTimelineEntry('write', {
+        path: '/chat/messages',
+        value: msg,
+        origin: 'self',
+        detail: { strategy: '数组合并-重试', version: retryResult.version }
+      });
+      showResult('success', '✅ 数组合并: 冲突已合并，消息保留 (版本 ' + retryResult.version + ')');
+    } else {
+      showResult('rejected', '❌ 数组合并: 重试失败');
+    }
+
+    // 刷新本地缓存
+    const latest = await client.get('/chat/messages');
+    if (Array.isArray(latest)) {
+      chatMessages = latest;
+      renderChatMessages();
+    }
+  } else {
+    addTimelineEntry('offline', {
+      path: '/chat/messages',
+      value: msg,
+      detail: { strategy: '数组合并', status: '离线入队' }
+    });
+    showResult('queued', '⏳ 离线队列中，重连后同步');
+  }
+}
+
+function mergeArraysById(arr1, arr2, idKey, tsKey) {
+  const map = new Map();
+
+  for (const item of arr1) {
+    if (item && item[idKey] !== undefined) {
+      map.set(item[idKey], item);
+    }
+  }
+
+  for (const item of arr2) {
+    if (item && item[idKey] !== undefined) {
+      const existing = map.get(item[idKey]);
+      if (!existing || item[tsKey] >= existing[tsKey]) {
+        map.set(item[idKey], item);
+      }
+    }
+  }
+
+  const result = Array.from(map.values());
+  result.sort((a, b) => (a[tsKey] || 0) - (b[tsKey] || 0));
+  return result;
+}
+
+function renderChatMessages() {
+  const container = document.getElementById('chatMessages');
+  if (!chatMessages || chatMessages.length === 0) {
+    container.innerHTML = '<div class="empty-state">暂无消息</div>';
+    return;
+  }
+
+  const sorted = [...chatMessages].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  container.innerHTML = sorted.map(msg => {
+    const isSelf = msg.sender === clientLabel;
+    const cls = isSelf ? 'chat-msg self' : 'chat-msg peer';
+    const time = msg.timestamp ? formatTime(msg.timestamp) : '';
+    return `
+      <div class="${cls}">
+        <div><strong>${escapeHtml(msg.sender || '?')}:</strong> ${escapeHtml(msg.text || '')}</div>
+        <div class="msg-time">${time}</div>
+      </div>
+    `;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+// ========== 离线测试 ==========
+function simulateOffline() {
+  client.simulateOffline();
+  addTimelineEntry('offline', { path: '-', detail: { action: '模拟断开连接' } });
+}
+
+function simulateReconnect() {
+  client.simulateReconnect();
+  addTimelineEntry('sync', { path: '-', detail: { action: '手动触发重连' } });
+}
+
+function clearOfflineQueue() {
+  if (client.offlineQueue) {
+    client.offlineQueue.clear();
+    addTimelineEntry('offline', { path: '-', detail: { action: '清空离线队列' } });
+    updateStatus();
+  }
+}
+
+// ========== 协作工具 ==========
+function openSecondWindow() {
+  const otherLabel = isClientA ? 'B' : 'A';
+  const url = window.location.origin + window.location.pathname +
+    '?client=' + otherLabel + '&session=' + sessionId;
+  window.open(url, '_blank', 'width=800,height=900');
+}
+
+function copyShareLink() {
+  const url = window.location.origin + window.location.pathname + '?session=' + sessionId;
+  navigator.clipboard.writeText(url).then(() => {
+    alert('分享链接已复制到剪贴板');
+  }).catch(() => {
+    prompt('复制以下链接分享：', url);
+  });
+}
+
+// ========== 初始化 ==========
+updateStatus();
+
+// 自动订阅默认路径
+setTimeout(() => {
+  subscribeCollabPath();
+}, 500);
 </script>
 </body>
 </html>

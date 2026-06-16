@@ -185,7 +185,7 @@ function handleGet(client, msg) {
 }
 
 function handleSet(client, msg) {
-  const { path: setPath, value, clientTimestamp, requestId, writeId, conflictStrategy } = msg;
+  const { path: setPath, value, clientTimestamp, requestId, writeId, conflictStrategy, force } = msg;
   const ws = client.ws;
 
   if (setPath === undefined) {
@@ -197,9 +197,9 @@ function handleSet(client, msg) {
   let logEntry;
 
   if (conflictStrategy === 'merge') {
-    logEntry = dataStore.merge(setPath, value || {}, timestamp, client.id);
+    logEntry = dataStore.merge(setPath, value || {}, timestamp, client.id, { writeId, force });
   } else {
-    logEntry = dataStore.set(setPath, value, timestamp, client.id);
+    logEntry = dataStore.set(setPath, value, timestamp, client.id, { writeId, force });
   }
 
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
@@ -230,7 +230,7 @@ function handleSet(client, msg) {
 }
 
 function handleMerge(client, msg) {
-  const { path: mergePath, value, clientTimestamp, requestId, writeId } = msg;
+  const { path: mergePath, value, clientTimestamp, requestId, writeId, force } = msg;
   const ws = client.ws;
 
   if (mergePath === undefined) {
@@ -239,7 +239,7 @@ function handleMerge(client, msg) {
   }
 
   const timestamp = clientTimestamp || Date.now();
-  const logEntry = dataStore.merge(mergePath, value || {}, timestamp, client.id);
+  const logEntry = dataStore.merge(mergePath, value || {}, timestamp, client.id, { writeId, force });
 
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
 
@@ -287,9 +287,9 @@ function handleSync(client, msg) {
       const timestamp = clientTimestamp || Date.now();
 
       if (op === 'merge') {
-        logEntry = dataStore.merge(writePath, value || {}, timestamp, client.id);
+        logEntry = dataStore.merge(writePath, value || {}, timestamp, client.id, { writeId });
       } else {
-        logEntry = dataStore.set(writePath, value, timestamp, client.id);
+        logEntry = dataStore.set(writePath, value, timestamp, client.id, { writeId });
       }
 
       appliedWriteIds.push(writeId);
@@ -343,11 +343,16 @@ function handleSync(client, msg) {
     conflicts,
     changesSinceLast: changes.map(c => ({
       id: c.id,
+      writeId: c.writeId,
       path: c.path,
       value: c.value,
       version: c.version,
       hybridTimestamp: c.hybridTimestamp,
-      clientId: c.clientId
+      clientTimestamp: c.clientTimestamp,
+      serverTimestamp: c.serverTimestamp,
+      clientId: c.clientId,
+      rejected: c.rejected,
+      conflict: c.conflict
     })),
     subscriptionSnapshots: serverValuesObj,
     requestId
