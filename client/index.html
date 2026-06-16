@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Realtime Sync Engine - Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 {
+    font-size: 24px; margin-bottom: 20px;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  h2 { font-size: 16px; margin-bottom: 12px; color: #94a3b8; font-weight: 600; }
+  .status-bar {
+    display: flex; gap: 16px; padding: 12px 16px;
+    background: #1e293b; border-radius: 8px; margin-bottom: 20px;
+    font-size: 13px; flex-wrap: wrap;
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #64748b;
+  }
+  .dot.connected { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite; }
+  .dot.online { background: #3b82f6; }
+  .dot.warning { background: #f59e0b; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: #1e293b; border-radius: 10px; padding: 16px;
+    border: 1px solid #334155;
+  }
+  .form-row {
+    display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  input, select, textarea, button {
+    padding: 8px 12px; border-radius: 6px;
+    background: #0f172a; color: #e2e8f0;
+    border: 1px solid #475569; font-size: 13px;
+    font-family: inherit;
+  }
+  input:focus, textarea:focus { outline: none; border-color: #60a5fa; }
+  input[type="text"], input[type="number"] { flex: 1; min-width: 120px; }
+  textarea { width: 100%; min-height: 80px; resize: vertical; }
+  button {
+    cursor: pointer; background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border: none; font-weight: 500; transition: all 0.2s;
+  }
+  button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+  button.secondary { background: #475569; }
+  button.danger { background: #ef4444; }
+  button.warning { background: #f59e0b; color: #1e293b; }
+  button:hover { filter: brightness(1.1); }
+  .data-box {
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 6px; padding: 12px; margin-top: 12px;
+    max-height: 200px; overflow: auto;
+    font-family: 'Consolas', monospace; font-size: 12px;
+    line-height: 1.6;
+  }
+  .data-box::-webkit-scrollbar { width: 6px; height: 6px; }
+  .data-box::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  .log-box {
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 6px; padding: 12px; margin-top: 12px;
+    max-height: 300px; overflow: auto;
+    font-family: 'Consolas', monospace; font-size: 11px;
+  }
+  .log-entry {
+    padding: 4px 6px; border-radius: 4px; margin-bottom: 2px;
+    border-left: 3px solid #475569;
+  }
+  .log-entry.local { border-color: #60a5fa; background: rgba(96, 165, 250, 0.08); }
+  .log-entry.remote { border-color: #a78bfa; background: rgba(167, 139, 250, 0.08); }
+  .log-entry.self { border-color: #22c55e; background: rgba(34, 197, 94, 0.08); }
+  .log-entry.sync { border-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+  .log-entry.system { border-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+  .log-time { color: #64748b; margin-right: 8px; }
+  .sub-list { margin-top: 10px; }
+  .sub-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px; background: #0f172a; border-radius: 4px;
+    margin-bottom: 4px; font-size: 12px;
+    border-left: 3px solid #6366f1;
+  }
+  .tag {
+    display: inline-block; padding: 2px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; margin-left: 4px;
+  }
+  .tag-self { background: #22c55e; color: #064e3b; }
+  .tag-remote { background: #a78bfa; color: #3b0764; }
+  .tag-local { background: #60a5fa; color: #1e3a8a; }
+  .tag-sync { background: #f59e0b; color: #78350f; }
+  .hint { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.5; }
+  .section-divider { height: 1px; background: #334155; margin: 12px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚡ Realtime Sync Engine Demo</h1>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">连接中...</span>
+    </div>
+    <div class="status-item">
+      <div class="dot" id="netDot"></div>
+      <span>网络: <span id="netText">-</span></span>
+    </div>
+    <div class="status-item">
+      <span>ClientID: <code id="clientId">-</code></span>
+    </div>
+    <div class="status-item">
+      <span>订阅数: <span id="subCount">0</span></span>
+    </div>
+    <div class="status-item">
+      <span>待同步写入: <span id="queueCount">0</span></span>
+    </div>
+    <div class="status-item">
+      <span>服务器版本: <span id="serverVer">0</span></span>
+    </div>
+    <div class="status-item">
+      <span>时钟偏差: <span id="skew">0</span>ms</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📡 订阅管理</h2>
+      <div class="form-row">
+        <input type="text" id="subPath" placeholder="路径，如 /users/123 或 /rooms/*" value="/chat">
+        <button onclick="doSubscribe()">订阅</button>
+      </div>
+      <div class="hint">支持通配符: <code>*</code> 匹配任意单级目录，如 <code>/rooms/*</code> 匹配所有房间</div>
+      <div class="sub-list" id="subList"></div>
+    </div>
+
+    <div class="card">
+      <h2>✍️ 写入数据</h2>
+      <div class="form-row">
+        <input type="text" id="setPath" placeholder="写入路径" value="/chat">
+        <select id="setOp">
+          <option value="set">set (覆盖)</option>
+          <option value="merge">merge (合并)</option>
+          <option value="remove">remove (删除)</option>
+        </select>
+      </div>
+      <textarea id="setValue" placeholder='JSON值，如 {"messages": [...]}'>{"room": "general", "lastMsg": "hello"}</textarea>
+      <div class="form-row">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+          <input type="checkbox" id="optUpdate" checked>乐观更新
+        </label>
+        <button onclick="doWrite()">写入</button>
+      </div>
+      <div class="data-box" id="previewBox"></div>
+      <div class="hint">勾选"乐观更新"会立即更新本地UI，服务器确认后再同步</div>
+    </div>
+
+    <div class="card">
+      <h2>🔍 读取数据</h2>
+      <div class="form-row">
+        <input type="text" id="getPath" placeholder="读取路径" value="/">
+        <button onclick="doGet()">读取</button>
+        <button class="secondary" onclick="doGetCache()">从缓存</button>
+      </div>
+      <div class="data-box" id="readBox">点击读取查看数据</div>
+    </div>
+
+    <div class="card">
+      <h2>🧪 离线测试</h2>
+      <div class="form-row">
+        <button class="warning" onclick="simulateOffline()">模拟断网</button>
+        <button onclick="simulateOnline()">模拟恢复</button>
+        <button class="secondary" onclick="showQueue()">查看队列</button>
+      </div>
+      <div class="form-row">
+        <button class="danger" onclick="clearAll()">清空缓存</button>
+        <button class="secondary" onclick="flushQueue()">强制同步队列</button>
+      </div>
+      <div class="section-divider"></div>
+      <h2>📝 日志</h2>
+      <div class="form-row">
+        <button class="secondary" onclick="clearLog()">清空日志</button>
+      </div>
+      <div class="log-box" id="logBox"></div>
+    </div>
+  </div>
+</div>
+
+<script src="realtime-sync.js"></script>
+<script>
+let client = null;
+const subCallbacks = {};
+
+function log(msg, type = 'system') {
+  const box = document.getElementById('logBox');
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + type;
+  const tagMap = {
+    local: '<span class="tag tag-local">本地</span>',
+    remote: '<span class="tag tag-remote">远程</span>',
+    self: '<span class="tag tag-self">自己</span>',
+    sync: '<span class="tag tag-sync">同步</span>',
+    system: ''
+  };
+  entry.innerHTML = `<span class="log-time">[${time}]</span>${msg} ${tagMap[type] || ''}`;
+  box.insertBefore(entry, box.firstChild);
+  while (box.children.length > 100) box.removeChild(box.lastChild);
+}
+
+function updateStats() {
+  if (!client) return;
+  const s = client.stats;
+  document.getElementById('statusDot').className = 'dot ' + (s.connected ? 'connected' : 'warning');
+  document.getElementById('statusText').textContent = s.connected ? '已连接' : '未连接';
+  document.getElementById('netDot').className = 'dot ' + (s.online ? 'online' : 'warning');
+  document.getElementById('netText').textContent = s.online ? '在线' : '离线';
+  document.getElementById('clientId').textContent = s.clientId || '-';
+  document.getElementById('subCount').textContent = s.subscriptions;
+  document.getElementById('queueCount').textContent = s.pendingWrites;
+  document.getElementById('serverVer').textContent = s.lastKnownServerVersion;
+  document.getElementById('skew').textContent = s.clockSkewMs;
+
+  const subs = Object.keys(subCallbacks);
+  const subList = document.getElementById('subList');
+  subList.innerHTML = '';
+  for (const path of subs) {
+    const item = document.createElement('div');
+    item.className = 'sub-item';
+    item.innerHTML = `
+      <code style="color:#a78bfa">${path}</code>
+      <button class="danger" style="padding:2px 8px;font-size:11px;" onclick="doUnsubscribe('${path.replace(/'/g, "\\'")}')">取消</button>
+    `;
+    subList.appendChild(item);
+  }
+  renderPreview();
+}
+
+function renderPreview() {
+  const box = document.getElementById('previewBox');
+  const path = document.getElementById('setPath').value;
+  if (!client) { box.textContent = '等待连接...'; return; }
+  try {
+    const val = client.cache.get(path);
+    box.innerHTML = '<span style="color:#64748b">路径 </span><code style="color:#a78bfa">' + path + '</code><br>' +
+      '<span style="color:#64748b">本地缓存值: </span><br>' +
+      '<pre style="color:#e2e8f0;margin-top:4px;">' + JSON.stringify(val, null, 2) + '</pre>';
+  } catch (e) { box.textContent = '读取失败: ' + e.message; }
+}
+
+async function doSubscribe() {
+  const path = document.getElementById('subPath').value.trim();
+  if (!path || subCallbacks[path]) return;
+  log('订阅路径: ' + path);
+  const cb = (evt) => {
+    const origin = evt.origin === 'local_optimistic' ? 'local'
+                : evt.origin === 'self' ? 'self'
+                : evt.origin === 'remote' ? 'remote'
+                : evt.origin === 'sync' ? 'sync' : 'system';
+    log(`[${path}] 值变更 -> ${JSON.stringify(evt.value).substring(0, 120)}`, origin);
+    updateStats();
+  };
+  client.subscribe(path, cb);
+  subCallbacks[path] = cb;
+  updateStats();
+}
+
+function doUnsubscribe(path) {
+  if (!subCallbacks[path]) return;
+  client.unsubscribe(path, subCallbacks[path]);
+  delete subCallbacks[path];
+  log('取消订阅: ' + path);
+  updateStats();
+}
+
+async function doWrite() {
+  const path = document.getElementById('setPath').value.trim();
+  const op = document.getElementById('setOp').value;
+  const raw = document.getElementById('setValue').value;
+  const optimistic = document.getElementById('optUpdate').checked;
+  if (!path) return;
+
+  let value;
+  if (op === 'remove') {
+    value = null;
+  } else {
+    try { value = raw ? JSON.parse(raw) : {}; }
+    catch (e) { alert('JSON格式错误: ' + e.message); return; }
+  }
+
+  log(`执行 ${op} ${path}: ${JSON.stringify(value).substring(0, 100)}`);
+  try {
+    const result = op === 'set' ? await client.set(path, value, { optimistic })
+                 : op === 'merge' ? await client.merge(path, value, { optimistic })
+                 : await client.remove(path, { optimistic });
+    log(`写入结果: ${result.committed ? '✅ 已提交' : '⏳ 队列中 (queued=' + result.queued + ')'}, writeId=${result.writeId.substring(0, 12)}...`,
+        result.committed ? 'self' : 'local');
+  } catch (e) {
+    log('写入错误: ' + e.message, 'system');
+  }
+  updateStats();
+}
+
+async function doGet() {
+  const path = document.getElementById('getPath').value.trim();
+  const box = document.getElementById('readBox');
+  box.textContent = '读取中...';
+  try {
+    const val = await client.get(path);
+    box.innerHTML = '<pre style="color:#e2e8f0;">' + JSON.stringify(val, null, 2) + '</pre>';
+    log('从服务器读取: ' + path, 'self');
+  } catch (e) {
+    box.innerHTML = '<span style="color:#ef4444">失败: ' + e.message + '</span>';
+  }
+  updateStats();
+}
+
+function doGetCache() {
+  const path = document.getElementById('getPath').value.trim();
+  const box = document.getElementById('readBox');
+  try {
+    const val = client.cache.get(path);
+    box.innerHTML = '<span style="color:#64748b">从本地缓存读取</span><br><pre style="color:#e2e8f0;margin-top:4px;">' + JSON.stringify(val, null, 2) + '</pre>';
+  } catch (e) {
+    box.textContent = '读取失败: ' + e.message;
+  }
+}
+
+function simulateOffline() {
+  log('>>> 模拟网络断开 <<<', 'system');
+  window.dispatchEvent(new Event('offline'));
+  if (client.ws) {
+    try { client.ws.close(); } catch (e) {}
+  }
+  updateStats();
+}
+
+function simulateOnline() {
+  log('>>> 模拟网络恢复 <<<', 'system');
+  window.dispatchEvent(new Event('online'));
+  client.connect();
+  updateStats();
+}
+
+function showQueue() {
+  const queue = client.getPendingWrites();
+  const box = document.getElementById('readBox');
+  if (queue.length === 0) {
+    box.innerHTML = '<span style="color:#22c55e">✓ 离线队列为空</span>';
+  } else {
+    box.innerHTML = `<span style="color:#f59e0b">共 ${queue.length} 条待同步写入:</span><br><br>` +
+      '<pre style="color:#e2e8f0;">' + JSON.stringify(queue.map(q => ({
+        op: q.op, path: q.path, writeId: q.writeId.substring(0, 15) + '...',
+        ts: new Date(q.clientTimestamp).toLocaleTimeString()
+      })), null, 2) + '</pre>';
+  }
+}
+
+function flushQueue() {
+  log('强制执行同步...', 'sync');
+  client._performSync();
+  updateStats();
+}
+
+function clearAll() {
+  if (!confirm('确定清空所有本地缓存和离线队列？')) return;
+  client.clearCache();
+  client.offlineQueue.clear();
+  log('本地数据已清空', 'system');
+  updateStats();
+  renderPreview();
+}
+
+function clearLog() {
+  document.getElementById('logBox').innerHTML = '';
+}
+
+async function init() {
+  log('初始化客户端...', 'system');
+  client = new RealtimeSyncClient({
+    autoReconnect: true,
+    queueStorageKey: 'demo_rts_queue_' + Math.random().toString(36).slice(2, 6),
+    cacheStorageKey: 'demo_rts_cache_' + Math.random().toString(36).slice(2, 6),
+    conflictResolver: async (conflict) => {
+      log(`⚔️ 冲突解决中 [${conflict.path}] 策略=${conflict.strategy}`, 'sync');
+      return null;
+    }
+  });
+
+  client.on('connected', (info) => {
+    log(`✓ 已连接到服务器 (clientId=${info.clientId.substring(0, 12)}...)`, 'system');
+    updateStats();
+    doSubscribe();
+  });
+
+  client.on('disconnected', () => {
+    log('⚠️ 连接断开', 'system');
+    updateStats();
+  });
+
+  client.on('reconnecting', (info) => {
+    log(`🔄 尝试重连 (#${info.attempt})...`, 'system');
+    updateStats();
+  });
+
+  client.on('synced', (info) => {
+    log(`📦 同步完成: 版本=${info.serverVersion}, 冲突=${info.conflicts?.length || 0}, 变更=${info.changesApplied || 0}`, 'sync');
+    updateStats();
+  });
+
+  client.on('sync_error', (e) => {
+    log('❌ 同步错误: ' + e.error.message, 'system');
+  });
+
+  client.on('write_queued', (op) => {
+    log(`📥 写入已排队 [${op.op}] ${op.path}`, 'local');
+    updateStats();
+  });
+
+  client.on('conflict_resolved', (c) => {
+    log(`⚔️ 冲突已解决 [${c.path}]`, 'sync');
+  });
+
+  client.on('network_offline', () => {
+    log('📵 检测到网络离线事件', 'system');
+    updateStats();
+  });
+
+  client.on('network_online', () => {
+    log('📶 检测到网络恢复事件', 'system');
+    updateStats();
+  });
+
+  client.on('error', (e) => {
+    log('❌ 错误: ' + e.message, 'system');
+  });
+
+  setInterval(updateStats, 1000);
+  await client.connect();
+}
+
+init().catch(e => {
+  log('初始化失败: ' + e.message, 'system');
+  console.error(e);
+});
+</script>
+</body>
+</html>
