@@ -4,7 +4,8 @@ class DataStore {
   constructor() {
     this.data = {};
     this.pathVersions = new Map();
-    this.pathTimestamps = new Map();
+    this.pathClientTimestamps = new Map();
+    this.pathHybridTimestamps = new Map();
     this.globalVersion = 0;
     this.changeLog = [];
     this.MAX_LOG_SIZE = 10000;
@@ -58,11 +59,10 @@ class DataStore {
 
   set(path, value, clientTimestamp, clientId, options = {}) {
     const serverTimestamp = Date.now();
-    const hybridTimestamp = this._generateHybridTimestamp(clientTimestamp, serverTimestamp);
     const normalizedPath = path || '/';
-    const existingTimestamp = this.pathTimestamps.get(normalizedPath) || 0;
+    const existingClientTs = this.pathClientTimestamps.get(normalizedPath) || 0;
 
-    const conflictResult = this._checkConflict(existingTimestamp, hybridTimestamp, options.force);
+    const conflictResult = this._checkConflict(existingClientTs, clientTimestamp, options.force);
 
     if (conflictResult.rejected) {
       return {
@@ -71,23 +71,25 @@ class DataStore {
         value: this.get(normalizedPath),
         oldValue: this.get(normalizedPath),
         version: this.globalVersion,
-        hybridTimestamp: existingTimestamp,
         clientTimestamp,
         serverTimestamp,
+        hybridTimestamp: this.pathHybridTimestamps.get(normalizedPath) || existingClientTs,
         clientId,
         affectedPaths: [normalizedPath],
         rejected: true,
         conflict: {
-          existingTimestamp,
-          incomingTimestamp: hybridTimestamp,
+          existingTimestamp: existingClientTs,
+          incomingTimestamp: clientTimestamp,
           winner: 'existing',
-          strategy: 'last_write_wins'
+          strategy: 'last_write_wins',
+          note: 'based on client timestamp'
         }
       };
     }
 
     const writeId = crypto.randomBytes(8).toString('hex');
     const version = ++this.globalVersion;
+    const hybridTimestamp = this._generateHybridTimestamp(clientTimestamp, serverTimestamp);
 
     const parts = this._splitPath(normalizedPath);
     const oldValue = this.get(normalizedPath);
@@ -129,7 +131,8 @@ class DataStore {
     for (const p of affectedPaths) {
       this.pathVersions.set(p, version);
     }
-    this.pathTimestamps.set(normalizedPath, hybridTimestamp);
+    this.pathClientTimestamps.set(normalizedPath, clientTimestamp);
+    this.pathHybridTimestamps.set(normalizedPath, hybridTimestamp);
 
     const logEntry = {
       id: writeId,
@@ -144,10 +147,11 @@ class DataStore {
       affectedPaths: Array.from(affectedPaths),
       rejected: false,
       conflict: conflictResult.happened ? {
-        existingTimestamp,
-        incomingTimestamp: hybridTimestamp,
+        existingTimestamp: existingClientTs,
+        incomingTimestamp: clientTimestamp,
         winner: 'incoming',
-        strategy: 'last_write_wins'
+        strategy: 'last_write_wins',
+        note: 'based on client timestamp'
       } : null
     };
     this.changeLog.push(logEntry);

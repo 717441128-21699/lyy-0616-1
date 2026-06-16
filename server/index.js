@@ -204,14 +204,15 @@ function handleSet(client, msg) {
 
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
 
-  if (writeId) {
+  if (writeId || requestId) {
     const ackMsg = {
       type: 'write_ack',
-      writeId,
+      writeId: writeId || null,
       path: setPath,
       version: logEntry.version,
       hybridTimestamp: logEntry.hybridTimestamp,
       committed: !logEntry.rejected,
+      rejected: logEntry.rejected,
       requestId
     };
     if (logEntry.conflict) {
@@ -242,14 +243,15 @@ function handleMerge(client, msg) {
 
   client.lastGlobalVersion = Math.max(client.lastGlobalVersion, logEntry.version);
 
-  if (writeId) {
+  if (writeId || requestId) {
     const ackMsg = {
       type: 'write_ack',
-      writeId,
+      writeId: writeId || null,
       path: mergePath,
       version: logEntry.version,
       hybridTimestamp: logEntry.hybridTimestamp,
       committed: !logEntry.rejected,
+      rejected: logEntry.rejected,
       requestId
     };
     if (logEntry.conflict) {
@@ -279,7 +281,7 @@ function handleSync(client, msg) {
     for (const write of pendingWrites) {
       const { path: writePath, value, clientTimestamp, writeId, op = 'set' } = write;
       const currentVersion = dataStore.getPathVersion(writePath);
-      const existingTimestamp = dataStore.pathTimestamps.get(writePath) || 0;
+      const existingTimestamp = dataStore.pathClientTimestamps.get(writePath) || 0;
 
       let logEntry;
       const timestamp = clientTimestamp || Date.now();

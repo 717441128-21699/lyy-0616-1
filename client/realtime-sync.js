@@ -618,17 +618,25 @@
             writeId,
             conflictStrategy: options.conflictStrategy || 'lww'
           };
-          await this._request(msg);
-          return { writeId, timestamp, committed: true };
+          const resp = await this._request(msg);
+          const committed = resp.committed !== false;
+          return {
+            writeId,
+            timestamp,
+            committed,
+            rejected: !committed,
+            conflict: resp.conflict || null,
+            version: resp.version
+          };
         } catch (e) {
           this.offlineQueue.enqueue(op);
           this.emit('write_queued', op);
-          return { writeId, timestamp, committed: false, queued: true };
+          return { writeId, timestamp, committed: false, queued: true, conflict: null };
         }
       } else {
         this.offlineQueue.enqueue(op);
         this.emit('write_queued', op);
-        return { writeId, timestamp, committed: false, queued: true };
+        return { writeId, timestamp, committed: false, queued: true, conflict: null };
       }
     }
 
@@ -678,17 +686,25 @@
             clientTimestamp: timestamp,
             writeId
           };
-          await this._request(msg);
-          return { writeId, timestamp, committed: true };
+          const resp = await this._request(msg);
+          const committed = resp.committed !== false;
+          return {
+            writeId,
+            timestamp,
+            committed,
+            rejected: !committed,
+            conflict: resp.conflict || null,
+            version: resp.version
+          };
         } catch (e) {
           this.offlineQueue.enqueue(op);
           this.emit('write_queued', op);
-          return { writeId, timestamp, committed: false, queued: true };
+          return { writeId, timestamp, committed: false, queued: true, conflict: null };
         }
       } else {
         this.offlineQueue.enqueue(op);
         this.emit('write_queued', op);
-        return { writeId, timestamp, committed: false, queued: true };
+        return { writeId, timestamp, committed: false, queued: true, conflict: null };
       }
     }
 
@@ -809,13 +825,13 @@
           }
         }
 
-        for (const [path, sub] of this.subscriptions) {
-          if (!resp.subscriptionSnapshots || !resp.subscriptionSnapshots[path]) {
-            try {
-              await this._request({ type: 'subscribe', path });
-            } catch (e) {}
-          }
+        const subscribePromises = [];
+        for (const [path] of this.subscriptions) {
+          subscribePromises.push(
+            this._request({ type: 'subscribe', path }).catch(() => null)
+          );
         }
+        await Promise.all(subscribePromises);
 
         this.emit('synced', {
           status: 'ok',

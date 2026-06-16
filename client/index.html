@@ -309,8 +309,30 @@ async function doWrite() {
     const result = op === 'set' ? await client.set(path, value, { optimistic })
                  : op === 'merge' ? await client.merge(path, value, { optimistic })
                  : await client.remove(path, { optimistic });
-    log(`写入结果: ${result.committed ? '✅ 已提交' : '⏳ 队列中 (queued=' + result.queued + ')'}, writeId=${result.writeId.substring(0, 12)}...`,
-        result.committed ? 'self' : 'local');
+    
+    let statusText, statusType;
+    if (result.rejected) {
+      statusText = '❌ 被拒绝(LWW：时间更早)';
+      statusType = 'rollback';
+    } else if (result.committed) {
+      statusText = '✅ 已提交';
+      statusType = 'self';
+    } else if (result.queued) {
+      statusText = '⏳ 已进入离线队列';
+      statusType = 'local';
+    } else {
+      statusText = '❓ 未知状态';
+      statusType = 'system';
+    }
+    
+    let detail = '';
+    if (result.conflict) {
+      const inStr = new Date(result.conflict.incomingTimestamp).toLocaleTimeString();
+      const exStr = new Date(result.conflict.existingTimestamp).toLocaleTimeString();
+      detail = ` [冲突: 写入=${inStr} vs 现有=${exStr}, ${result.conflict.winner === 'incoming' ? '写入胜出' : '现有胜出'}]`;
+    }
+    
+    log(`写入结果: ${statusText}${detail}, writeId=${result.writeId.substring(0, 12)}...`, statusType);
   } catch (e) {
     log('写入错误: ' + e.message, 'system');
   }
